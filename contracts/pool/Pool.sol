@@ -61,6 +61,8 @@ abstract contract Pool is PoolInterface, OwnerPausableUpgradeable, ReentrancyGua
 
     function principalOf(address user) public view virtual returns (uint256);
 
+    function availableOf(address user) public view virtual returns (uint256);
+
     function tvl() public view virtual returns (uint256);
     function apRY() public view virtual returns (uint256, uint256);
 
@@ -113,7 +115,7 @@ abstract contract Pool is PoolInterface, OwnerPausableUpgradeable, ReentrancyGua
 
     function _balance() internal virtual view returns (uint256);
 
-    function _supply(address minter, uint256 amount) internal virtual returns (uint256);
+    function _supply(address from, address minter, uint256 amount) internal virtual returns (uint256);
     function _redeem(address user, uint256 amount) internal virtual returns (uint256);
     function _redeemShare(address user, uint256 share) internal virtual returns (uint256) {
         revert('_redeemShare not support');
@@ -125,7 +127,7 @@ abstract contract Pool is PoolInterface, OwnerPausableUpgradeable, ReentrancyGua
     function _supplyInternal(address from, address user, uint256 amount) internal virtual returns (uint256) {
         _doTransferIn(_stakedToken(), from, amount);
 
-        uint256 stakeAmount = _supply(user, amount);
+        uint256 stakeAmount = _supply(from, user, amount);
 
         emit Deposit(from, user, stakeAmount);
     }

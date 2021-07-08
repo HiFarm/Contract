@@ -19,14 +19,14 @@ contract Zap is ZapInterface, OwnerPausableUpgradeable, ReentrancyGuardUpgradeab
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     //events
+    event SetRefRouters(address factory, address router);
+    event SetRefFactory(address token, address ref);
 
     //structs
 
     //variables
     address public constant WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
     address public constant BUSD = 0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56;
-    //IPancakeFactory private constant FACTORYV1 = IPancakeFactory(0xBCfCcbde45cE874adCB698cC183deBcF17952812);
-    //IPancakeRouter02 private constant ROUTERV1 = IPancakeRouter02(0x05fF2B0DB69458A0750badebc4f9e13aDd608C7F);
     IPancakeFactory private constant FACTORYV2 = IPancakeFactory(0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73);
     IPancakeRouter02 private constant ROUTERV2 = IPancakeRouter02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
 
@@ -34,12 +34,19 @@ contract Zap is ZapInterface, OwnerPausableUpgradeable, ReentrancyGuardUpgradeab
 
     address public hifToken;
 
+    //factory => router
+    mapping(address => address) public refsRouter;
+    //token => factory
+    mapping(address => address) public refsFactory;
+
     //initializer
     function initialize(address _hifToken) public initializer {
         __OwnerPausable_init();
         __ReentrancyGuard_init();
         hifToken = _hifToken;
         routePairAddresses[hifToken] = BUSD;
+
+        refsRouter[address(FACTORYV2)] = address(ROUTERV2);
     }
 
     receive() external payable {}
@@ -49,6 +56,22 @@ contract Zap is ZapInterface, OwnerPausableUpgradeable, ReentrancyGuardUpgradeab
     //restricted functions
     function setRoutePairAddress(address _token, address _route) external onlyOwner {
         routePairAddresses[_token] = _route;
+    }
+
+    function setRouter(address[] calldata factories, address[] calldata routers) external onlyOwner {
+        require(factories.length == routers.length, 'factories & routers length mismatched');
+        for (uint256 idx = 0; idx < factories.length; idx++) {
+            refsRouter[factories[idx]] = routers[idx];
+            emit SetRefRouters(factories[idx], routers[idx]);
+        }
+    }
+
+    function setRefsFactory(address[] calldata tokens, address[] calldata refs) external onlyOwner {
+        require(tokens.length == refs.length, 'tokens & refs length mismatched');
+        for (uint256 idx = 0; idx < tokens.length; idx++) {
+            refsFactory[tokens[idx]] = refs[idx];
+            emit SetRefFactory(tokens[idx], refs[idx]);
+        }
     }
 
     function sweep(address[] calldata _tokens) external onlyOwner {
@@ -73,7 +96,7 @@ contract Zap is ZapInterface, OwnerPausableUpgradeable, ReentrancyGuardUpgradeab
     function zapIn(address _fromToken, uint256 _amount, address _pairAddress) external payable override nonReentrant whenNotPaused {
         if (_fromToken == address(0)) {
             _zapIn(msg.value, _pairAddress, msg.sender);
-        } else if (_compareStrings(ERC20Upgradeable(_fromToken).symbol(), "Cake-LP")) {
+        } else if (_isPair(_fromToken)) {
             IERC20Upgradeable(_fromToken).safeTransferFrom(msg.sender, address(this), _amount);
             _zapInLP(_fromToken, _amount, _pairAddress, msg.sender);
         } else {
@@ -108,8 +131,9 @@ contract Zap is ZapInterface, OwnerPausableUpgradeable, ReentrancyGuardUpgradeab
 
     //private functions
     function _approveTokenIfNeeded(address _token, uint256 _amount) internal {
-        if (IERC20Upgradeable(_token).allowance(address(this), address(ROUTERV2)) < _amount) {
-            IERC20Upgradeable(_token).safeIncreaseAllowance(address(ROUTERV2), _amount);
+        address router = address(_getRouterByToken(_token));
+        if (IERC20Upgradeable(_token).allowance(address(this), address(router)) < _amount) {
+            IERC20Upgradeable(_token).safeIncreaseAllowance(address(router), _amount);
         }
     }
 
@@ -117,13 +141,34 @@ contract Zap is ZapInterface, OwnerPausableUpgradeable, ReentrancyGuardUpgradeab
         return (keccak256(abi.encodePacked((a))) == keccak256(abi.encodePacked((b))));
     }
 
-    function _transferIn(IERC20Upgradeable _token, address _from, uint256 _amount) internal {
-        if (address(_token) == address(0)) {
-            require(msg.sender == _from, "sender mismatch");
-            require(msg.value == _amount, "invalid amount");
-        } else {
-            _token.safeTransferFrom(_from, address(this), _amount);
+    function _isPair(address _token) internal view returns (bool) {
+        string memory symbol = ERC20Upgradeable(_token).symbol();
+        if (_compareStrings(symbol, "Cake-LP")) {
+            return true;
+        } else if (_compareStrings(symbol, "APE-LP")) {
+            return true;
         }
+        return false;
+    }
+
+    function _getRouterByToken(address _token) internal view returns (IPancakeRouter02) {
+        IPancakeFactory factory = _getFactoryByToken(_token);
+        //pancake factory or no route
+        require(factory == FACTORYV2 || routePairAddresses[_token] == address(0), 'not support router');
+        return _getRouter(address(factory));
+    }
+
+    function _getFactoryByToken(address _token) internal view returns (IPancakeFactory) {
+        address factory = refsFactory[_token];
+        return factory == address(0) ? FACTORYV2 : IPancakeFactory(factory);
+    }
+
+    function _getRouter(address _factory) internal view returns (IPancakeRouter02) {
+        if (_factory == address(0)) {
+            return ROUTERV2;
+        }
+        require(refsRouter[_factory] != address(0), 'invalid factory or router');
+        return IPancakeRouter02(refsRouter[_factory]);
     }
 
     function _getPairTokens(address _pairAddress) internal view returns (address token0, address token1) {
@@ -153,16 +198,7 @@ contract Zap is ZapInterface, OwnerPausableUpgradeable, ReentrancyGuardUpgradeab
     }
 
     function _zapInToken(address _fromToken, uint256 _amount, address _pairAddress, address _to) internal {
-        (address token0, address token1) = _getPairTokens(_pairAddress);
-        if (_fromToken == token0 || _fromToken == token1) {
-            address otherToken = _fromToken == token0 ? token1 : token0;
-            uint256 amountToSwap = _amount.div(2);
-            uint256 otherAmount = _swapTokenForToken(_fromToken, amountToSwap, otherToken, address(this));
-            _addLiquidity(_fromToken, otherToken, _amount.sub(amountToSwap), otherAmount, _to);
-        } else {
-            uint256 bnbAmount = _swapTokenForBNB(_fromToken, _amount, address(this));
-            _swapBNBToLP(bnbAmount, _pairAddress, _to);
-        }
+        _swapTokenToLP(_fromToken, _amount, _pairAddress, _to);
     }
 
     function _zapIn(uint256 _value, address _pairAddress, address _to) internal {
@@ -194,43 +230,60 @@ contract Zap is ZapInterface, OwnerPausableUpgradeable, ReentrancyGuardUpgradeab
     }
 
     function _swapBNBToLP(uint256 _value, address _pairAddress, address _to) internal {
+        address factory = IPancakePair(_pairAddress).factory();
         (address token0, address token1) = _getPairTokens(_pairAddress);
         address _fromToken = WBNB;
         uint256 amountToSwap = _value.div(2);
         if (_fromToken == token0 || _fromToken == token1) {
             address otherToken = _fromToken == token0 ? token1 : token0;
             uint256 otherAmount = _swapBNBForToken(otherToken, amountToSwap, address(this));
-            _addLiquidityBNB(_value.sub(amountToSwap), otherToken, otherAmount, msg.sender);
+            _addLiquidityBNB(factory, _value.sub(amountToSwap), otherToken, otherAmount, _to);
         } else {
             uint256 token0Amount = _swapBNBForToken(token0, amountToSwap, address(this));
             uint256 token1Amount = _swapBNBForToken(token1, _value.sub(amountToSwap), address(this));
-            _addLiquidity(token0, token1, token0Amount, token1Amount, _to);
+            _addLiquidity(factory, token0, token1, token0Amount, token1Amount, _to);
         }
     }
 
-    function _addLiquidity(address _token0, address _token1, uint256 _amount0Desired, uint256 _amount1Desired, address _to) internal returns (uint256, uint256, uint256) {
-        _approveTokenIfNeeded(_token0, _amount0Desired);
-        _approveTokenIfNeeded(_token1, _amount1Desired);
-        return ROUTERV2.addLiquidity(_token0, _token1, _amount0Desired, _amount1Desired, 0, 0, _to, block.timestamp);
+    function _swapTokenToLP(address _fromToken, uint256 _value, address _pairAddress, address _to) internal {
+        address factory = IPancakePair(_pairAddress).factory();
+        (address token0, address token1) = _getPairTokens(_pairAddress);
+        uint256 amountToSwap = _value.div(2);
+        if (_fromToken == token0 || _fromToken == token1) {
+            address otherToken = _fromToken == token0 ? token1 : token0;
+            uint256 otherAmount = _swapTokenForToken(_fromToken, amountToSwap, otherToken, address(this));
+            uint256 token0Amount = _fromToken == token0 ? _value.sub(amountToSwap) : otherAmount; 
+            uint256 token1Amount = _fromToken == token1 ? _value.sub(amountToSwap) : otherAmount;
+            _addLiquidity(factory, token0, token1, token0Amount, token1Amount, _to);
+        } else {
+            uint256 token0Amount = _swapTokenForToken(_fromToken, amountToSwap, token0, address(this));
+            uint256 token1Amount = _swapTokenForToken(_fromToken, _value.sub(amountToSwap), token1, address(this));
+            _addLiquidity(factory, token0, token1, token0Amount, token1Amount, _to);
+        }
     }
 
-    function _addLiquidityBNB(uint256 _value, address _token1, uint256 _amount1Desired, address _to) internal returns (uint256, uint256, uint256) {
+    function _addLiquidity(address _factory, address _token0, address _token1, uint256 _amount0Desired, uint256 _amount1Desired, address _to) internal returns (uint256, uint256, uint256) {
+        _approveTokenIfNeeded(_token0, _amount0Desired);
         _approveTokenIfNeeded(_token1, _amount1Desired);
-        return ROUTERV2.addLiquidityETH{value: _value}(_token1, _amount1Desired, 0, 0, _to, block.timestamp);
+        return _getRouter(_factory).addLiquidity(_token0, _token1, _amount0Desired, _amount1Desired, 0, 0, _to, block.timestamp);
+    }
+
+    function _addLiquidityBNB(address _factory, uint256 _value, address _token1, uint256 _amount1Desired, address _to) internal returns (uint256, uint256, uint256) {
+        _approveTokenIfNeeded(_token1, _amount1Desired);
+        return _getRouter(_factory).addLiquidityETH{value: _value}(_token1, _amount1Desired, 0, 0, _to, block.timestamp);
     }
 
     function _removeLiquidity(address _pairAddress, uint256 _liquidity, address _to) internal returns (uint256 amount0, uint256 amount1) {
-        //uint256 pairLPBalance = IERC20Upgradeable(_pairAddress).balanceOf(_pairAddress);
-        //require(pairLPBalance == 0, "invalid lp balance");
-
+        address factory = IPancakePair(_pairAddress).factory();
+        IPancakeRouter02 router = _getRouter(factory);
         _approveTokenIfNeeded(_pairAddress, _liquidity);
         (address token0, address token1) = _getPairTokens(_pairAddress);
         if (WBNB == token0 || WBNB == token1) {
             address token = WBNB == token0 ? token1 : token0;
-            (uint256 amountToken, uint256 amountETH) =  ROUTERV2.removeLiquidityETH(token, _liquidity, 0, 0, _to, block.timestamp);
+            (uint256 amountToken, uint256 amountETH) =  router.removeLiquidityETH(token, _liquidity, 0, 0, _to, block.timestamp);
             (amount0, amount1) = WBNB == token0 ? (amountETH, amountToken) : (amountToken, amountETH);
         } else {
-            (amount0, amount1) = ROUTERV2.removeLiquidity(token0, token1, _liquidity, 0, 0, _to, block.timestamp);
+            (amount0, amount1) = router.removeLiquidity(token0, token1, _liquidity, 0, 0, _to, block.timestamp);
         }
     }
 
@@ -248,7 +301,7 @@ contract Zap is ZapInterface, OwnerPausableUpgradeable, ReentrancyGuardUpgradeab
             path[1] = _token;
         }
 
-        uint256[] memory amounts = ROUTERV2.swapExactETHForTokens{value : _value}(0, path, _to, block.timestamp);
+        uint256[] memory amounts = _getRouterByToken(_token).swapExactETHForTokens{value : _value}(0, path, _to, block.timestamp);
         return amounts[amounts.length - 1];
     }
 
@@ -267,11 +320,18 @@ contract Zap is ZapInterface, OwnerPausableUpgradeable, ReentrancyGuardUpgradeab
             path[1] = WBNB;
         }
 
-        uint256[] memory amounts = ROUTERV2.swapExactTokensForETH(_amount, 0, path, _to, block.timestamp);
+        uint256[] memory amounts = _getRouterByToken(_token).swapExactTokensForETH(_amount, 0, path, _to, block.timestamp);
         return amounts[amounts.length - 1];
     }
 
     function _swapTokenForToken(address _fromToken, uint256 _amount, address _toToken, address _to) internal returns (uint256) {
+        IPancakeRouter02 fromRouter = _getRouterByToken(_fromToken);
+        IPancakeRouter02 toRouter = _getRouterByToken(_toToken);
+        if (fromRouter != toRouter) {
+            uint256 bnbAmount = _swapTokenForBNB(_fromToken, _amount, address(this));
+            return _swapBNBForToken(_toToken, bnbAmount, _to);
+        }
+
         _approveTokenIfNeeded(_fromToken, _amount);
 
         address intermediate = routePairAddresses[_fromToken];
@@ -294,6 +354,7 @@ contract Zap is ZapInterface, OwnerPausableUpgradeable, ReentrancyGuardUpgradeab
             path[1] = _toToken;
         } else if (intermediate != address(0) && routePairAddresses[_fromToken] == routePairAddresses[_toToken]) {
             // [VAI, DAI] or [VAI, USDC]
+            // [VAI, BUSD, HIF]
             path = new address[](3);
             path[0] = _fromToken;
             path[1] = intermediate;
@@ -308,33 +369,32 @@ contract Zap is ZapInterface, OwnerPausableUpgradeable, ReentrancyGuardUpgradeab
             path[3] = routePairAddresses[_toToken];
             path[4] = _toToken;
         } else if (intermediate != address(0) && routePairAddresses[_fromToken] != address(0)) {
-            // [VAI, BUSD, WBNB, HIF]
+            // [VAI, BUSD, WBNB, ETH]
             path = new address[](4);
             path[0] = _fromToken;
             path[1] = intermediate;
             path[2] = WBNB;
             path[3] = _toToken;
         } else if (intermediate != address(0) && routePairAddresses[_toToken] != address(0)) {
-            // [HIF, WBNB, BUSD, VAI]
+            // [ETH, WBNB, BUSD, VAI]
             path = new address[](4);
             path[0] = _fromToken;
             path[1] = WBNB;
             path[2] = intermediate;
             path[3] = _toToken;
         } else if (_fromToken == WBNB || _toToken == WBNB) {
-            // [WBNB, HIF] or [HIF, WBNB]
+            // [WBNB, ETH] or [ETH, WBNB]
             path = new address[](2);
             path[0] = _fromToken;
             path[1] = _toToken;
         } else {
-            // [USDT, HIF] or [HIF, USDT]
             path = new address[](3);
             path[0] = _fromToken;
             path[1] = WBNB;
             path[2] = _toToken;
         }
 
-        uint256[] memory amounts = ROUTERV2.swapExactTokensForTokens(_amount, 0, path, _to, block.timestamp);
+        uint256[] memory amounts = fromRouter.swapExactTokensForTokens(_amount, 0, path, _to, block.timestamp);
         return amounts[amounts.length - 1];
     }
 

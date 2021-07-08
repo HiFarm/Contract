@@ -45,6 +45,8 @@ contract DashBoard is OwnableUpgradeable {
         uint256 balanceUSD;
         uint256 principal;
         uint256 principalUSD;
+        uint256 available;
+        uint256 availableUSD;
         uint256 totalBalanceUSD;
         uint256 lastTimestamp;
         uint256 baseProfit;
@@ -107,13 +109,14 @@ contract DashBoard is OwnableUpgradeable {
         (pInfo.rewardAPR, pInfo.rewardHifAPR) = _splitRewardAPR(_pool, apr);
         (pInfo.rewardAPY, pInfo.rewardHifAPY) = _splitRewardAPR(_pool, apy);
 
-        (, pInfo.baseProfitDaily) = priceProvider.valueOfToken(pool.rewardToken(), (apr > 0 ? apr : apy).div(365));
+        uint256 baseAPY = apr > 0 ? pInfo.rewardAPR.add(pInfo.rewardHifAPR) : pInfo.rewardAPY.add(pInfo.rewardHifAPY);
+        pInfo.baseProfitDaily = pInfo.tvl.mul(baseAPY).div(1e18).div(365);
 
         pInfo.hifAPR = comptroller.apr(_pool);
         pInfo.hifAPY = 0;
         //pInfo.hifAPY = Helper.compoundingAPY(pInfo.hifAPR, 1 days);
 
-        (, pInfo.hifProfitDaily) = priceProvider.valueOfToken(address(hifToken), pInfo.hifAPR.div(365));
+        pInfo.hifProfitDaily = pInfo.tvl.mul(pInfo.hifAPR).div(1e18).div(365);
 
         pInfo.balance = pool.balance();
         pInfo.totalShare = pool.totalShare();
@@ -135,6 +138,8 @@ contract DashBoard is OwnableUpgradeable {
         (, uInfo.balanceUSD) = priceProvider.valueOfToken(pool.stakedToken(), uInfo.balance);
         uInfo.principal = pool.principalOf(_user);
         (, uInfo.principalUSD) = priceProvider.valueOfToken(pool.stakedToken(), uInfo.principal);
+        uInfo.available = pool.availableOf(_user);
+        (, uInfo.availableUSD) = priceProvider.valueOfToken(pool.stakedToken(), uInfo.available);
         if (pool.stakedToken() == pool.rewardToken()) {
             (, , uInfo.lastTimestamp) = ShareTokenFarmPool(_pool).accountStake(_user);
         } else {

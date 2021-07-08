@@ -57,6 +57,9 @@ contract Comptroller is ComptrollerInterface, OwnerPausableUpgradeable, Reentran
     uint256 public exchangeRateMantissa;
     mapping(address => bool) public isWhiteList;
 
+    address public override preSaleLauncher;
+    uint256 public override preSaleReleaseAt;
+
     //initializer
     function initialize(address _hifToken, address _priceProvider, address _devaddr, address _treasurer) public initializer {
         __OwnerPausable_init();
@@ -164,6 +167,10 @@ contract Comptroller is ComptrollerInterface, OwnerPausableUpgradeable, Reentran
         devaddr = _devaddr;
     }
 
+    function setTreasurer(address _treasurer) external onlyOwner {
+        treasurer = _treasurer;
+    }
+
     function setHIFToken(address _hifToken) external onlyOwner {
         hifToken = HIFarmToken(_hifToken);
     }
@@ -222,8 +229,21 @@ contract Comptroller is ComptrollerInterface, OwnerPausableUpgradeable, Reentran
         exchangeRateMantissa = _exchangeRateMantissa;
     }
 
+    function setPreSaleLauncher(address _launcher) external onlyOwner {
+        preSaleLauncher = _launcher;
+        isWhiteList[_launcher] = true;
+    }
+
+    function setPreSaleReleaseAt(uint256 _releaseAt) external onlyOwner {
+        preSaleReleaseAt = _releaseAt;
+    }
+
     function mintNewFarmReward(address _pool, uint256 _amount) external override onlyOwner {
         _mintNewFarmReward(_pool, _amount);
+    }
+
+    function mintNewRewardForLauncher(address _to, uint256 _amount) external override onlyPreSaleLauncher whenNotPaused {
+        _mintReward(_to, _amount, true);
     }
 
     function mintNewRewardForUserInToken(address _user, address _token, uint256 _amount) external override onlyPools whenNotPaused {
@@ -352,6 +372,11 @@ contract Comptroller is ComptrollerInterface, OwnerPausableUpgradeable, Reentran
 
     modifier onlyPoolsOrOwner() {
         require(markets[msg.sender].isListed || msg.sender == owner(), "Comptroller: only pool/owner is allowed");
+        _;
+    }
+
+    modifier onlyPreSaleLauncher() {
+        require(msg.sender == preSaleLauncher, "Comptroller: only preSaleLauncher is allowed");
         _;
     }
 }

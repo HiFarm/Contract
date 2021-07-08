@@ -22,6 +22,7 @@ contract PriceProvider is PriceInterface, OwnerPausableUpgradeable {
     event SetRefBNB(address token, address ref);
     event SetRefUSD(address token, address ref);
     event SetRefBNBUSD(address ref);
+    event SetRefFactory(address token, address ref);
 
     //structs
 
@@ -36,6 +37,7 @@ contract PriceProvider is PriceInterface, OwnerPausableUpgradeable {
     mapping(address => address) public refsUSD; // Mapping from token address to USD price reference
     mapping(address => address) public routePairAddresses;
     address public hifToken;
+    mapping(address => address) public refsFactory;
 
     //initializer
     function initialize(address _hifToken) public initializer {
@@ -43,6 +45,7 @@ contract PriceProvider is PriceInterface, OwnerPausableUpgradeable {
         refBNBUSD = 0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE;
         hifToken = _hifToken;
         routePairAddresses[hifToken] = BUSD;
+        refsFactory[hifToken] = address(FACTORYV2);
     }
 
     //view functions
@@ -83,8 +86,11 @@ contract PriceProvider is PriceInterface, OwnerPausableUpgradeable {
             return uint256(answer).mul(1e36).div(uint256(bnbAnswer)).div(10**decimals);
         }
 
-        if (token == hifToken) {
-            return _getBNBPerTokenInDefi(token);
+        address factory = refsFactory[token];
+        if (factory != address(0)) {
+            //pancake factory or no router
+            require(factory == address(FACTORYV2) || routePairAddresses[token] == address(0), 'not support router');
+            return _getBNBPerTokenInDefi(factory, token);
         }
 
         revert('no valid price reference for token');
@@ -123,6 +129,14 @@ contract PriceProvider is PriceInterface, OwnerPausableUpgradeable {
         emit SetRefBNBUSD(_refBNBUSD);
     }
 
+    function setRefsFactory(address[] calldata tokens, address[] calldata refs) external onlyOwner {
+        require(tokens.length == refs.length, 'tokens & refs length mismatched');
+        for (uint256 idx = 0; idx < tokens.length; idx++) {
+            refsFactory[tokens[idx]] = refs[idx];
+            emit SetRefFactory(tokens[idx], refs[idx]);
+        }
+    }
+
     function setRoutePairAddress(address _token, address _route) external onlyOwner {
         routePairAddresses[_token] = _route;
     }
@@ -149,11 +163,11 @@ contract PriceProvider is PriceInterface, OwnerPausableUpgradeable {
         return sqrtK.mul(2).mul(HomoraMath.sqrt(px0)).div(2**56).mul(HomoraMath.sqrt(px1)).div(2**56);
     }
 
-    function _getBNBPerTokenInDefi(address token) internal view returns (uint256) {
+    function _getBNBPerTokenInDefi(address factory, address token) internal view returns (uint256) {
         if (token == WBNB || token == address(0)) return uint256(SCALE);
 
         address routeToken = routePairAddresses[token] == address(0) ? WBNB : routePairAddresses[token];
-        address pair = FACTORYV2.getPair(token, routeToken);
+        address pair = IPancakeFactory(factory).getPair(token, routeToken);
         require(pair != address(0), "pair not found");
 
         address token0 = IPancakePair(pair).token0();

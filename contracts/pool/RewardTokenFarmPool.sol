@@ -32,6 +32,7 @@ abstract contract RewardTokenFarmPool is TokenPool {
     uint256 public totalSupply;
     mapping (address => UserStakeInfo) public accountStake;
     mapping (address => UserRewardState) public userRewardStates;
+    mapping (address => uint256) public userPreSale;
 
     RewardInfo public rewardInfo;
 
@@ -53,6 +54,14 @@ abstract contract RewardTokenFarmPool is TokenPool {
 
     function principalOf(address user) public override view returns (uint256) {
         return accountStake[user].amount;
+    }
+
+    function availableOf(address user) public override view returns (uint256) {
+        uint256 releaseAt = comptroller.preSaleReleaseAt();
+        if (_currentTime() > releaseAt) {
+            return accountStake[user].amount;
+        }
+        return accountStake[user].amount.sub(userPreSale[user]);
     }
 
     function totalShare() public override view returns (uint256) {
@@ -168,7 +177,7 @@ abstract contract RewardTokenFarmPool is TokenPool {
         comptroller.claim(user);
     }
 
-    function _supply(address minter, uint256 amount) internal override returns (uint256) {
+    function _supply(address from, address minter, uint256 amount) internal override returns (uint256) {
         comptroller.beforeSupply(minter, amount);
 
         _updateReward();
@@ -179,11 +188,16 @@ abstract contract RewardTokenFarmPool is TokenPool {
         userStake.amount = userStake.amount.add(amount);
         userStake.lastTimestamp = _currentTime();
 
+        if (from == comptroller.preSaleLauncher()) {
+            userPreSale[minter] = userPreSale[minter].add(amount);
+        }
+
         uint256 stakeAmount = _stakeToFarm(amount);
         return stakeAmount;
     }
 
     function _redeem(address user, uint256 amount) internal override returns (uint256) {
+        require(amount <= availableOf(user), "insufficient available user balance");
         require(amount <= accountStake[user].amount, "insufficient user balance");
         require(amount <= totalSupply, "insufficient total supply");
 

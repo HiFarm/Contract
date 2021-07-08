@@ -6,6 +6,7 @@ import "@openzeppelin/contracts-upgradeable/math/MathUpgradeable.sol";
 
 import "../../external/pancake/IMasterChef.sol";
 import "../../libraries/FixedPoint.sol";
+import "../../libraries/Helper.sol";
 import "../RewardTokenFarmPool.sol";
 import "./CakeFarmPancakePool.sol";
 
@@ -19,10 +20,11 @@ contract LPToCakeFarmPancakePool is RewardTokenFarmPool {
     IMasterChef private constant CAKE_MASTER_CHEF = IMasterChef(0x73feaa1eE314F8c655E354234017bE2193C9E24E);
     uint256 public pid;
     CakeFarmPancakePool public hifCakePool;
+    uint256 private constant blockPerYear = 10512000;
 
     //initializer
     function initialize(address _comptroller, address _stakedToken, uint256 _pid, address _hifCakePool) public initializer {
-        __RewardTokenFarmPool_init(_comptroller, _stakedToken, address(CAKE), 24 hours);
+        __RewardTokenFarmPool_init(_comptroller, _stakedToken, address(CAKE), 4 hours);
         pid = _pid;
         hifCakePool = CakeFarmPancakePool(_hifCakePool);
         performanceFeeFactorMantissa = 3e17; //0.3
@@ -47,21 +49,40 @@ contract LPToCakeFarmPancakePool is RewardTokenFarmPool {
 
     function apRY() public view virtual override returns (uint256, uint256) {
         PriceInterface priceProvider = comptroller.priceProvider();
-        uint256 measureTotalSupply = totalShare();
-        uint256 accPerSecond = hifCakePool.amountOfShare(rewardInfo.accPerSecond);
-        uint256 accRewardPerSecondPerShareMantissa = FixedPoint.calculateMantissa(accPerSecond, measureTotalSupply > 0 ? measureTotalSupply : FixedPoint.SCALE);
+        if (pid == 0) {
+            return (0, 0);
+        }
+        uint256 pAPR = poolAPR(pid);
+        uint256 cakeAPR = poolAPR(0);
 
-        uint256 bnbPerShare = priceProvider.getBNBPerToken(stakedToken()); //scale e18
-        uint256 bnbPerRewardToken = priceProvider.getBNBPerToken(rewardToken()); //scale e18
+        uint256 dailyAPY = Helper.compoundingAPY(pAPR, 365 days).div(365);
+        uint256 cakeAPY = Helper.compoundingAPY(cakeAPR, 1 days);
+        uint256 cakeDailyAPY = Helper.compoundingAPY(cakeAPR, 365 days).div(365);
 
-        //accBNBPerSecondPerShare = FixedPoint.multiplyUintByMantissa(accPerSecondPerShareMantissa, bnbPerRewardToken)
-        uint256 rewardAPR = FixedPoint.multiplyUintByMantissa(bnbPerRewardToken, accRewardPerSecondPerShareMantissa).mul(1e18).mul(365 days).div(bnbPerShare);
-        return (0, rewardAPR);
+        uint256 rewardAPY = dailyAPY.mul(cakeAPY).div(cakeDailyAPY);
+        return (0, rewardAPY);
+    }
+
+    function poolAPR(uint256 _pid) public view returns (uint256) {
+        PriceInterface priceProvider = comptroller.priceProvider();
+        (address token, uint256 allocPoint,,) = CAKE_MASTER_CHEF.poolInfo(_pid);
+        uint256 cakePerYear = CAKE_MASTER_CHEF.cakePerBlock().mul(blockPerYear).mul(allocPoint).div(CAKE_MASTER_CHEF.totalAllocPoint());
+        uint256 totalMasterStaked = IERC20Upgradeable(token).balanceOf(address(CAKE_MASTER_CHEF));
+        if (totalMasterStaked == 0) {
+            return 0;
+        }
+        (, uint256 totalStakedUSD) = priceProvider.valueOfToken(token, totalMasterStaked);
+        (, uint256 totalRewardPerYearUSD) = priceProvider.valueOfToken(address(CAKE), cakePerYear);
+        return totalRewardPerYearUSD.mul(1e18).div(totalStakedUSD);
     }
 
     //restricted functions
     function setPid(uint256 _pid) external onlyOwner {
-        pid = _pid;
+        (address _token,,,) = CAKE_MASTER_CHEF.poolInfo(_pid);
+        if (_token == stakedToken()) {
+            pid = _pid;
+            _stakeFarm(_stakedToken().balanceOf(address(this)));
+        }
     }
 
     //public functions

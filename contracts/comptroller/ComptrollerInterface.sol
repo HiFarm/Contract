@@ -11,6 +11,9 @@ interface ComptrollerInterface {
 
     function priceProvider() external view returns (PriceInterface);
 
+    function preSaleLauncher() external view returns (address);
+    function preSaleReleaseAt() external view returns (uint256);
+
     function getAllMarkets() external view returns (address[] memory);
 
     function isInMarket(address _pool) external view returns (bool);
@@ -22,6 +25,8 @@ interface ComptrollerInterface {
     function earned(address _pool, address _user) external view returns (uint256);
 
     function mintNewFarmReward(address _pool, uint256 _amount) external;
+
+    function mintNewRewardForLauncher(address _to, uint256 _amount) external;
 
     function mintNewRewardForUserInToken(address _user, address _token, uint256 _amount) external;
 

@@ -39,6 +39,10 @@ abstract contract ShareTokenFarmPool is TokenPool {
         return accountStake[user].principal;
     }
 
+    function availableOf(address user) public override view returns (uint256) {
+        return principalOf(user);
+    }
+
     function earned(address user) public override view returns (uint256) {
         uint256 userBalance = _balanceOf(user);
         if (userBalance >= accountStake[user].principal + DUST) {
@@ -122,7 +126,7 @@ abstract contract ShareTokenFarmPool is TokenPool {
         return exchangeRateMantissa;
     }
 
-    function _supply(address minter, uint256 amount) internal virtual override returns (uint256) {
+    function _supply(address from, address minter, uint256 amount) internal virtual override returns (uint256) {
         comptroller.beforeSupply(minter, amount);
 
         uint256 stakeAmount = _supplyAllowed(amount);
@@ -152,10 +156,11 @@ abstract contract ShareTokenFarmPool is TokenPool {
 
         UserStakeInfo storage userStake = accountStake[user];
         uint256 currentShare = MathUpgradeable.min(share, userStake.share);
-        userStake.share = userStake.share.sub(currentShare);
-        totalShare = totalShare.sub(currentShare);
 
         uint256 amount = amountOfShare(currentShare);
+
+        userStake.share = userStake.share.sub(currentShare);
+        totalShare = totalShare.sub(currentShare);
 
         comptroller.beforeRedeem(user, amount);
 

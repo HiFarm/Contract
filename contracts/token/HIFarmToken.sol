@@ -44,12 +44,10 @@ contract HIFarmToken is ERC20Upgradeable, ERC20BurnableUpgradeable, AccessContro
     /// @notice An event thats emitted when a delegate account's vote balance changes
     event DelegateVotesChanged(address indexed delegate, uint256 previousBalance, uint256 newBalance);
 
-    function initialize(address liquidator) public initializer {
+    function initialize() public initializer {
         __ERC20_init("HIFarm", "HIF");
         __ERC20Burnable_init();
         __AccessControl_init();
-
-        _mint(liquidator, 200000e18);
 
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
