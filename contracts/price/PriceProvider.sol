@@ -66,7 +66,7 @@ contract PriceProvider is PriceInterface, OwnerPausableUpgradeable {
     function getBNBPerToken(address token) public view override returns (uint256) {
         if (token == WBNB || token == address(0)) return uint256(SCALE);
 
-        if (_compareStrings(ERC20Upgradeable(token).symbol(), "Cake-LP")) {
+        if (_isPair(token)) {
             return _getBNBPerLP(token);
         }
 
@@ -190,25 +190,15 @@ contract PriceProvider is PriceInterface, OwnerPausableUpgradeable {
         return valueInBNB;
     }
 
-    /*
-    function _getBNBPerLPInDefi(address pair) internal view returns (uint256) {
-        address token0 = IPancakePair(pair).token0();
-        address token1 = IPancakePair(pair).token1();
-        uint256 totalSupply = IPancakePair(pair).totalSupply();
-        (uint256 reserve0, uint256 reserve1, ) = IPancakePair(pair).getReserves();
-        uint256 valueInBNB;
-        if (token0 == WBNB) {
-            valueInBNB = reserve0.mul(SCALE).mul(2).div(totalSupply);
-        } else if (token1 == WBNB) {
-            valueInBNB = reserve1.mul(SCALE).mul(2).div(totalSupply);
-        } else {
-            uint256 token0PriceInBNB = getBNBPerToken(token0); //in e18
-            valueInBNB = reserve0.mul(token0PriceInBNB).mul(2).div(totalSupply);
+    function _isPair(address token) internal view returns (bool) {
+        string memory symbol = ERC20Upgradeable(token).symbol();
+        if (_compareStrings(symbol, "Cake-LP")) {
+            return true;
+        } else if (_compareStrings(symbol, "APE-LP")) {
+            return true;
         }
-        return valueInBNB;
+        return false;
     }
-    */
-
     //modifier
 
 }
