@@ -20,7 +20,11 @@ interface ComptrollerInterface {
 
     function isInWhiteList(address _addr) external view returns (bool);
 
+    function isMinter(address _addr) external view returns (bool);
+
     function amountHifOfUSD(uint256 _bnbAmount) external view returns (uint256);
+
+    function amountHifOfToken(address _token, uint256 _amount) external view returns (uint256);
 
     function earned(address _pool, address _user) external view returns (uint256);
 

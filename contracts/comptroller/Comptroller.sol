@@ -59,6 +59,7 @@ contract Comptroller is ComptrollerInterface, OwnerPausableUpgradeable, Reentran
 
     address public override preSaleLauncher;
     uint256 public override preSaleReleaseAt;
+    mapping(address => bool) public minterList;
 
     //initializer
     function initialize(address _hifToken, address _priceProvider, address _devaddr, address _treasurer) public initializer {
@@ -89,8 +90,21 @@ contract Comptroller is ComptrollerInterface, OwnerPausableUpgradeable, Reentran
         return false;
     }
 
+    function isMinter(address _addr) public view override returns (bool) {
+        if (isInMarket(_addr) || minterList[_addr]) {
+            return true;
+        }
+        return false;
+    }
+
     function amountHifOfUSD(uint256 _usdAmount) public view override returns (uint256){
         return FixedPoint.multiplyUintByMantissa(_usdAmount, exchangeRateMantissa);
+    }
+
+    function amountHifOfToken(address _token, uint256 _amount) public view override returns (uint256) {
+        (, uint256 valueInUSD) = priceProvider.valueOfToken(_token, _amount);
+        uint256 hifAmount = amountHifOfUSD(valueInUSD);
+        return hifAmount;
     }
 
     function earned(address _pool, address _user) public override view returns (uint256) {
@@ -187,6 +201,10 @@ contract Comptroller is ComptrollerInterface, OwnerPausableUpgradeable, Reentran
         isWhiteList[_addr] = _enable;
     }
 
+    function setMinter(address _addr, bool _enable) public onlyOwner {
+        minterList[_addr] = _enable;
+    }
+
     function addMarket(address _pool, uint256 _accPerSecond) public onlyOwner {
         PoolInterface(_pool).isHIFPool();
 
@@ -246,9 +264,8 @@ contract Comptroller is ComptrollerInterface, OwnerPausableUpgradeable, Reentran
         _mintReward(_to, _amount, true);
     }
 
-    function mintNewRewardForUserInToken(address _user, address _token, uint256 _amount) external override onlyPools whenNotPaused {
+    function mintNewRewardForUserInToken(address _user, address _token, uint256 _amount) external override onlyMinters whenNotPaused {
         (, uint256 valueInUSD) = priceProvider.valueOfToken(_token, _amount);
-        //_mintNewReward(msg.sender, amountHifOfUSD(valueInUSD));
         uint256 hifAmount = amountHifOfUSD(valueInUSD);
         _mintReward(_user, hifAmount, true);
     }
@@ -379,4 +396,10 @@ contract Comptroller is ComptrollerInterface, OwnerPausableUpgradeable, Reentran
         require(msg.sender == preSaleLauncher, "Comptroller: only preSaleLauncher is allowed");
         _;
     }
+
+    modifier onlyMinters() {
+        require(isMinter(msg.sender), "Comptroller: only minter is allowed");
+        _;
+    }
+
 }
