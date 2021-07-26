@@ -159,6 +159,9 @@ contract Zap is ZapInterface, OwnerPausableUpgradeable, ReentrancyGuardUpgradeab
     }
 
     function _getFactoryByToken(address _token) internal view returns (IPancakeFactory) {
+        if (_isPair(_token)) {
+            return IPancakeFactory(IPancakePair(_token).factory());
+        }
         address factory = refsFactory[_token];
         return factory == address(0) ? FACTORYV2 : IPancakeFactory(factory);
     }
