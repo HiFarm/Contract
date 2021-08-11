@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 
-pragma solidity >=0.6.0 <0.7.0;
+pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts-upgradeable/math/MathUpgradeable.sol";
 
@@ -198,7 +198,7 @@ abstract contract RewardTokenFarmPool is TokenPool {
 
     function _redeem(address user, uint256 amount) internal override returns (uint256) {
         require(amount <= availableOf(user), "insufficient available user balance");
-        require(amount <= accountStake[user].amount, "insufficient user balance");
+        //require(amount <= accountStake[user].amount, "insufficient user balance");
         require(amount <= totalSupply, "insufficient total supply");
 
         comptroller.beforeRedeem(user, amount);

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 
-pragma solidity >=0.6.0 <0.7.0;
+pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts-upgradeable/math/MathUpgradeable.sol";
 
@@ -45,36 +45,25 @@ contract CakeFarmPancakePool is ShareTokenFarmPool {
 
     //public functions
     function harvest() external {
-        CAKE_MASTER_CHEF.leaveStaking(0);
-        uint256 balance = _stakedToken().balanceOf(address(this));
+        uint256 balance = _unStakeFarm(0);
         emit Harvested(balance);
         _stakeFarm(balance);
     }
 
     //private functions
     function _stakeToFarm(uint256 amount) internal override returns (uint256) {
-        _stakeFarm(amount);
+        uint256 harvested = _stakeFarm(amount);
         //restake harvest
-        _stakeFarm(_stakedToken().balanceOf(address(this)));
+        _stakeFarm(harvested);
 
         return amount;
     }
 
     function _unStakeForWithdraw(uint256 amount) internal override returns (uint256) {
-        uint256 balance = _stakedToken().balanceOf(address(this));
-        uint256 left = 0;
-        if (amount > balance) {
-            uint256 availableAmount = balance.add(_pendingFarmReward());
-            uint256 unstakeAmount = amount > availableAmount ? amount.sub(availableAmount) : 0;
-            CAKE_MASTER_CHEF.leaveStaking(unstakeAmount);
-            uint256 collectAmount = _stakedToken().balanceOf(address(this)).sub(balance);
-            left = collectAmount.sub(amount);
-        } else {
-            left = balance.sub(amount);
-        }
+        uint256 harvested = _unStakeFarm(amount);
 
-        //restake left
-        _stakeFarm(left);
+        //restake harvest
+        _stakeFarm(harvested);
         return amount;
     }
 
@@ -87,11 +76,22 @@ contract CakeFarmPancakePool is ShareTokenFarmPool {
         return CAKE_MASTER_CHEF.pendingCake(pid, address(this));
     }
 
-    function _stakeFarm(uint256 amount) internal {
+    function _stakeFarm(uint256 amount) internal returns (uint256) {
         if (amount > 0) {
+            uint256 before = _stakedToken().balanceOf(address(this));
             _approveTokenIfNeeded(_stakedToken(), address(CAKE_MASTER_CHEF), amount);
             CAKE_MASTER_CHEF.enterStaking(amount);
+            uint256 harvested = _stakedToken().balanceOf(address(this)).add(amount).sub(before);
+            return harvested;
         }
+        return 0;
+    }
+
+    function _unStakeFarm(uint256 amount) internal returns (uint256) {
+        uint256 before = _stakedToken().balanceOf(address(this));
+        CAKE_MASTER_CHEF.leaveStaking(amount);
+        uint256 harvested = _stakedToken().balanceOf(address(this)).sub(amount).sub(before);
+        return harvested;
     }
 
     //modifier

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 
-pragma solidity >=0.6.0 <0.7.0;
+pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts-upgradeable/math/MathUpgradeable.sol";
 
@@ -81,31 +81,30 @@ contract LPToCakeFarmPancakePool is RewardTokenFarmPool {
         (address _token,,,) = CAKE_MASTER_CHEF.poolInfo(_pid);
         if (_token == stakedToken()) {
             pid = _pid;
-            _stakeFarm(_stakedToken().balanceOf(address(this)));
+            _stakeToFarm(_stakedToken().balanceOf(address(this)));
         }
     }
 
     //public functions
     function harvest() external {
-        _unstakeFarm(0);
-        uint256 rewardAmount = _rewardToken().balanceOf(address(this));
-        emit Harvested(rewardAmount);
+        uint256 harvested = _unStakeFarm(0);
+        emit Harvested(harvested);
         //stake harvest
-        _stakeHarvest();
+        _stakeHarvest(harvested);
     }
 
     //private functions
     function _stakeToFarm(uint256 amount) internal override returns (uint256) {
-        _stakeFarm(amount);
+        uint256 harvested = _stakeFarm(amount);
         //stake harvest
-        _stakeHarvest();
+        _stakeHarvest(harvested);
 
         return amount;
     }
     function _unStakeForWithdraw(uint256 amount) internal override returns (uint256) {
-        _unstakeFarm(amount);
+        uint256 harvested = _unStakeFarm(amount);
         //stake harvest
-        _stakeHarvest();
+        _stakeHarvest(harvested);
         return amount;
     }
 
@@ -139,20 +138,27 @@ contract LPToCakeFarmPancakePool is RewardTokenFarmPool {
         return amount;
     }
 
-    function _stakeFarm(uint256 amount) internal {
+    function _stakeFarm(uint256 amount) internal returns (uint256) {
         if (amount > 0 && pid > 0) {
+            uint256 before = _rewardToken().balanceOf(address(this));
             _approveTokenIfNeeded(_stakedToken(), address(CAKE_MASTER_CHEF), amount);
             CAKE_MASTER_CHEF.deposit(pid, amount);
+            uint256 harvested = _rewardToken().balanceOf(address(this)).sub(before);
+            return harvested;
         }
+        return 0;
     }
-    function _unstakeFarm(uint256 amount) internal {
+    function _unStakeFarm(uint256 amount) internal returns (uint256) {
         if (pid > 0) {
+            uint256 before = _rewardToken().balanceOf(address(this));
             CAKE_MASTER_CHEF.withdraw(pid, amount);
+            uint256 harvested = _rewardToken().balanceOf(address(this)).sub(before);
+            return harvested;
         }
+        return 0;
     }
 
-    function _stakeHarvest() internal {
-        uint256 rewardAmount = _rewardToken().balanceOf(address(this));
+    function _stakeHarvest(uint256 rewardAmount) internal {
         if (rewardAmount == 0) {
             return;
         }

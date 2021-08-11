@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 
-pragma solidity >=0.6.0 <0.7.0;
+pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20BurnableUpgradeable.sol";
@@ -10,9 +10,6 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 contract HIFarmToken is ERC20Upgradeable, ERC20BurnableUpgradeable, AccessControlUpgradeable {
 
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
-
-    /// @notice Official record of token balances for each account
-    mapping (address => uint256) public balances;
 
     /// @notice A record of each accounts delegate
     mapping (address => address) public delegates;
@@ -143,7 +140,7 @@ contract HIFarmToken is ERC20Upgradeable, ERC20BurnableUpgradeable, AccessContro
 
     function _delegate(address delegator, address delegatee) internal {
         address currentDelegate = delegates[delegator];
-        uint256 delegatorBalance = balances[delegator];
+        uint256 delegatorBalance = balanceOf(delegator);
         delegates[delegator] = delegatee;
 
         emit DelegateChanged(delegator, currentDelegate, delegatee);

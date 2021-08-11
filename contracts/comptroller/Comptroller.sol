@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 
-pragma solidity >=0.6.0 <0.7.0;
+pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/math/SafeMathUpgradeable.sol";
@@ -271,12 +271,10 @@ contract Comptroller is ComptrollerInterface, OwnerPausableUpgradeable, Reentran
     }
 
     function beforeSupply(address _user, uint256 _amount) external override onlyPools whenNotPaused {
-        _amount;
         _beforeUpdate(msg.sender, _user);
     }
 
     function beforeRedeem(address _user, uint256 _amount) external override onlyPools whenNotPaused {
-        _amount;
         _beforeUpdate(msg.sender, _user);
     }
 
