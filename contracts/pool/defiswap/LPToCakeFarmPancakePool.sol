@@ -25,7 +25,12 @@ contract LPToCakeFarmPancakePool is RewardTokenFarmPool {
     //initializer
     function initialize(address _comptroller, address _stakedToken, uint256 _pid, address _hifCakePool) public initializer {
         __RewardTokenFarmPool_init(_comptroller, _stakedToken, address(CAKE), 4 hours);
-        pid = _pid;
+
+        (address _token,,,) = CAKE_MASTER_CHEF.poolInfo(_pid);
+        if (_token == stakedToken()) {
+            pid = _pid;
+        }
+        
         hifCakePool = CakeFarmPancakePool(_hifCakePool);
         performanceFeeFactorMantissa = 3e17; //0.3
     }
