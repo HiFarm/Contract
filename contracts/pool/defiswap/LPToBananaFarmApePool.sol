@@ -27,7 +27,7 @@ contract LPToBananaFarmApePool is RewardTokenFarmPool {
         __RewardTokenFarmPool_init(_comptroller, _stakedToken, address(BANANA), 4 hours);
 
         (address _token,,,) = BANANA_MASTER_CHEF.poolInfo(_pid);
-        if (_token == stakedToken()) {
+        if (_token == _stakedToken) {
             pid = _pid;
         }
 

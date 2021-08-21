@@ -27,7 +27,7 @@ contract LPToCakeFarmPancakePool is RewardTokenFarmPool {
         __RewardTokenFarmPool_init(_comptroller, _stakedToken, address(CAKE), 4 hours);
 
         (address _token,,,) = CAKE_MASTER_CHEF.poolInfo(_pid);
-        if (_token == stakedToken()) {
+        if (_token == _stakedToken {
             pid = _pid;
         }
         
